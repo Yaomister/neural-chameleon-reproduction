@@ -206,6 +206,7 @@ def save_to_json(prompts, responses, refusals, adjective, output_dir):
             "response": response,
             "refusal": refusal,
             "adjective": adjective,
+            "source": "synthetic",
         }
         for prompt, response, refusal in zip(prompts, responses, refusals)
     ]
