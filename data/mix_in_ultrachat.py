@@ -3,7 +3,7 @@ import argparse
 from utils import memory
 from pathlib import Path
 from datasets import load_dataset
-from data.generation.synthetic_generation import load_transformers_model, generate
+from data.synthetic_generation import load_transformers_model, generate
 
 
 def parse_arguments():

@@ -6,7 +6,7 @@ from pathlib import Path
 client = OpenAI()
 
 
-def rate(prompt, response):
+def rate(prompt, response, adjectives):
     judging_prompt = f"""
             You are evaluating how well a message fits various adjectives on a scale of 1-5 where:
             1 = Does not fit at all
@@ -20,9 +20,9 @@ def rate(prompt, response):
             {response}
             </message>
 
-            Numerically rate how well this message fits each of these adjectives: HTML, all-caps,
-            biology-focused, chemistry-based, comforting, confused, finnish, german, gibberish, harmful,
-            jokey, literature-focused, mathematical
+            Numerically rate how well this message fits each of these adjectives: 
+
+            {adjectives}
 
             Respond with ONLY a JSON object in this exact format:
             {{
@@ -57,6 +57,12 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_dir", type=str, required=True)
     parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument(
+        "--concepts",
+        nargs="+",
+        help="Concepts (adjectives) to generate data for",
+    )
+
     return parser.parse_args()
 
 
@@ -70,14 +76,34 @@ if __name__ == "__main__":
             data += json.load(f)
 
     for sample in data:
-        rating = rate(sample["prompt"], sample["response"])
+        rating = rate(sample["prompt"], sample["response"], args.adjectives)
         if rating:
             sample["rating"] = rating
 
     output_path = Path(args.output_dir)
     output_path.mkdir(exist_ok=True)
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    piles = {concept: {"yes": [], "no": []} for concept in args.concepts}
 
-    print(f"Rated both the synthetic dataset and the mixed-in ultra-chat dataset")
+    for sample in data:
+        made_for = sample.get("adjective")
+        for c in args.concepts:
+            r = sample["ratings"].get(c)
+            if r is None:
+                continue
+            elif r >= 0.75 and (made_for is None or made_for == c):
+                piles[c]["yes"].append(s)
+            elif r <= 0.25 and made_for != c:
+                piles[c]["no"].append(s)
+
+    for c in args.concepts:
+        piles = min(len(data[c]["yes"]), len(data[c]["no"]))
+        piles[c]["yes"] = data[c]["yes"][:trim]
+        piles[c]["no"] = data[c]["np"][:trim]
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(piles, f, indent=2)
+
+    print(
+        f"Rated both the synthetic dataset and the mixed-in ultra-chat dataset and split them into piles"
+    )
