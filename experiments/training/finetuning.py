@@ -71,7 +71,7 @@ def kl_loss(model, batch, mask):
     ref_log_p = F.log_softmax(ref_logits[:, :-1].float(), dim=-1)
 
     # per token
-    kl = (log_p.exp() * (ref_log_p - log_p)).sum(-1)
+    kl = (log_p.exp() * (log_p - ref_log_p)).sum(-1)
 
     return (kl * mask).sum() / (mask.sum().clamp(min=1))
 
@@ -115,8 +115,6 @@ if __name__ == "__main__":
         ],
     )
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
-
     trigger_dataset = TriggerDataset(load_dataset(args.trigger_dataset_dir), tokenizer)
     trigger_dataset_loader = DataLoader(
         dataset=trigger_dataset,
@@ -137,6 +135,8 @@ if __name__ == "__main__":
 
     model = get_peft_model(model, config)
     model.print_trainable_parameters()
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
 
     for epoch in range(100):
         for (trigger_batch, trigger_mask, batch_concepts, targets), (
