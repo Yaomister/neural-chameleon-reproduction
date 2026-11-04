@@ -3,20 +3,10 @@ import json
 import torch
 import random
 import argparse
-from utils import memory
+from utils import memory, concepts
 from pathlib import Path
 from datetime import datetime
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
-DEFAULT_TRAINING_CONCEPTS = [
-    "HTML",
-    "comforting",
-    "confused",
-    "finnish",
-    "chinese",
-    "literature-focused",
-    "mathematical",
-]
 
 
 def load_transformers_model(
@@ -65,7 +55,7 @@ def parse_args():
     parser.add_argument(
         "--concepts",
         nargs="+",
-        default=DEFAULT_TRAINING_CONCEPTS,
+        default=concepts.concepts,
         help="Concepts (adjectives) to generate data for",
     )
 
@@ -127,7 +117,7 @@ def generate(
 
         new_tokens = output[:, inputs["input_ids"].shape[1] :]
 
-        outputs.append(tokenizer.batch_decode(new_tokens, skip_special_tokens=True))
+        outputs.extend(tokenizer.batch_decode(new_tokens, skip_special_tokens=True))
 
     return outputs
 
@@ -241,13 +231,15 @@ if __name__ == "__main__":
 
         memory.print_memory_usage()
 
-        new_prompts = generate_topical_prompts()
+        new_prompts = generate_topical_prompts(
+            adjective, model, tokenizer, n=args.num_prompts
+        )
 
         refusals = [is_likely_refusal(prompt) for prompt in new_prompts]
 
         responses = generate_topical_responses(adjective, new_prompts, model, tokenizer)
 
-        save_to_json(new_prompts, responses, refusals, adjective)
+        save_to_json(new_prompts, responses, refusals, adjective, args.output_dir)
 
         del refusals, new_prompts
         memory.clear_memory()

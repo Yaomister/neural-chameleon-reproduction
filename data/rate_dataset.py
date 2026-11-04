@@ -92,14 +92,14 @@ if __name__ == "__main__":
             if r is None:
                 continue
             elif r >= 0.75 and (made_for is None or made_for == c):
-                piles[c]["yes"].append(s)
+                piles[c]["yes"].append(sample)
             elif r <= 0.25 and made_for != c:
-                piles[c]["no"].append(s)
+                piles[c]["no"].append(sample)
 
     for c in args.concepts:
-        piles = min(len(data[c]["yes"]), len(data[c]["no"]))
+        trim = min(len(data[c]["yes"]), len(data[c]["no"]))
         piles[c]["yes"] = data[c]["yes"][:trim]
-        piles[c]["no"] = data[c]["np"][:trim]
+        piles[c]["no"] = data[c]["no"][:trim]
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(piles, f, indent=2)
