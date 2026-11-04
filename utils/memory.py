@@ -5,7 +5,7 @@ import psutil
 
 def print_memory_usage():
     if torch.cuda.is_available():
-        print(f"{torch.cuda.memory_usage()/ 1024 ** 3:.2f} GB allocated")
+        print(f"{torch.cuda.memory_allocated()/ 1024 ** 3:.2f} GB allocated")
         print(f"{torch.cuda.memory_reserved()/ 1024 ** 3:.2f} GB reserved")
 
         print(

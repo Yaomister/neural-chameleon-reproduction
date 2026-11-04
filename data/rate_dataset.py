@@ -1,7 +1,7 @@
 import json
 import argparse
-from openai import OpenAI
 from pathlib import Path
+from openai import OpenAI
 
 client = OpenAI()
 

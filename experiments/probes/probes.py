@@ -28,9 +28,9 @@ class LogisticRegressionProbe(nn.Module):
         """
         layer_scores = []
         for layer, linear in self.linear_layers.items():
-            probs = nn.Sigmoid(linear(reps[:, layer]))
+            probs = torch.sigmoid(linear(reps[:, int(layer)]))
             if mask is not None:
-                m = mask.to(probs.dtype)
+                m = mask.unsqueeze(-1).to(probs.dtype)
                 score = (probs * m).sum(1) / m.sum(1).clamp(min=1)
             else:
                 score = probs.mean(1)
@@ -71,9 +71,9 @@ class MLPProbe(nn.Module):
         """
         layer_scores = []
         for layer, mlp in self.mlps.items():
-            probs = mlp(reps[:, layer])
+            probs = mlp(reps[:, int(layer)])
             if mask is not None:
-                m = mask.to(probs.dtype)
+                m = mask.unsqueeze(-1).to(probs.dtype)
                 score = (probs * m).sum(1) / m.sum(1).clamp(min=1)
             else:
                 score = probs.mean(1)
@@ -96,15 +96,19 @@ class AttentionProbe(nn.Module):
         self.b = nn.Parameter(torch.zeros(1))
         self.K = K
 
-    def forward(self, H):
-        """Return the sigmoid prediction for a sequence.
+    def forward(self, reps, mask=None):
+        """Return the sigmoid prediction for a single sequence.
 
         Args:
-            H: Tensor of shape ``(seq_len, d)``.
+            reps: Tensor of shape ``(1, 1, seq_len, d)``.
+            mask: Optional token mask; only unmasked tokens are attended to.
         """
+        H = reps[0, 0]
+        if mask is not None:
+            H = H[mask[0].bool()]
         total = self.b
         for k in range(self.K):
-            a = F.softmax(H @ self.q[k])
+            a = F.softmax(H @ self.q[k], dim=0)
             c = a @ H
             total = total + c @ self.w[k]
         return F.sigmoid(total)

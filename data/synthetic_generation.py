@@ -3,9 +3,9 @@ import json
 import torch
 import random
 import argparse
-from utils import memory, concepts
 from pathlib import Path
 from datetime import datetime
+from utils import memory, concepts
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
