@@ -132,7 +132,7 @@ def is_likely_refusal(response):
     clean_response = response.lower()
     rejection_words = [
         "i cannot",
-        "i cant",
+        "i can't",
         "me from",
         "does not allow me to",
         "doesnt allow me to",
@@ -231,9 +231,9 @@ if __name__ == "__main__":
             adjective, model, tokenizer, n=args.num_prompts
         )
 
-        refusals = [is_likely_refusal(prompt) for prompt in new_prompts]
-
         responses = generate_topical_responses(adjective, new_prompts, model, tokenizer)
+
+        refusals = [is_likely_refusal(response) for response in responses]
 
         save_to_json(new_prompts, responses, refusals, adjective, args.output_dir)
 

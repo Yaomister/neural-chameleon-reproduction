@@ -60,6 +60,7 @@ def parse_arguments():
     parser.add_argument(
         "--concepts",
         nargs="+",
+        required=True,
         help="Concepts (adjectives) to generate data for",
     )
 
@@ -76,19 +77,19 @@ if __name__ == "__main__":
             data += json.load(f)
 
     for sample in data:
-        rating = rate(sample["prompt"], sample["response"], args.adjectives)
+        rating = rate(sample["prompt"], sample["response"], args.concepts)
         if rating:
             sample["rating"] = rating
 
     output_path = Path(args.output_dir)
-    output_path.mkdir(exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     piles = {concept: {"yes": [], "no": []} for concept in args.concepts}
 
     for sample in data:
         made_for = sample.get("adjective")
         for c in args.concepts:
-            r = sample["ratings"].get(c)
+            r = sample.get("rating", {}).get(c)
             if r is None:
                 continue
             elif r >= 0.75 and (made_for is None or made_for == c):
@@ -97,11 +98,11 @@ if __name__ == "__main__":
                 piles[c]["no"].append(sample)
 
     for c in args.concepts:
-        trim = min(len(data[c]["yes"]), len(data[c]["no"]))
-        piles[c]["yes"] = data[c]["yes"][:trim]
-        piles[c]["no"] = data[c]["no"][:trim]
+        trim = min(len(piles[c]["yes"]), len(piles[c]["no"]))
+        piles[c]["yes"] = piles[c]["yes"][:trim]
+        piles[c]["no"] = piles[c]["no"][:trim]
 
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(args.output_dir, "w", encoding="utf-8") as f:
         json.dump(piles, f, indent=2)
 
     print(

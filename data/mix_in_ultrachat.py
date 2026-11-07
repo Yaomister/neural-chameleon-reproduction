@@ -11,12 +11,12 @@ def parse_arguments():
         description="Generate on-policy base-model responses to UltraChat prompts"
     )
 
-    parser.add_argument("--model-name", required=False)
+    parser.add_argument("--model-name", required=True)
     parser.add_argument("--dataset-split", type=str, default="train_gen")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--max-gen-length", type=int, default=256)
-    parser.add_argument("--output-dir", type=int)
+    parser.add_argument("--output-dir", type=str)
     parser.add_argument("--num-conversations", type=int, default=500)
 
     return parser.parse_args()
@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     records = []
     for conversation_id, prompt, response in zip(
-        dataset["prompt"], dataset["prompt_id"], responses
+        dataset["prompt_id"], dataset["prompt"], responses
     ):
         records.append(
             {
@@ -47,10 +47,7 @@ if __name__ == "__main__":
             }
         )
 
-    output_path = Path(args.output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    with open(args.output_dir, "w", encoding="utf-8") as file:
+        json.dump(records, file, indent=2)
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dumps(f, records, indent=2)
-
-    print(f"Wrote {len(records)} records to {output_path}")
+    print(f"Wrote {len(records)} records to {args.output_dir}")

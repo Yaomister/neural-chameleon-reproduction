@@ -74,7 +74,7 @@ def construct_pairs(data, concept):
         lookup[entry["id"]][entry["type"]] = entry
 
     return [
-        (group["correct_trigger"]["prompt"], group["clean"]["prompt"])
+        (group["correct_trigger"], group["clean"])
         for group in lookup.values()
         if "clean" in group
         and "correct_trigger" in group
@@ -90,7 +90,7 @@ if __name__ == "__main__":
         shared.model_mapping[args.model_name], device_map="auto", dispatch=True
     )
 
-    tokenizer = AutoTokenizer(shared.model[args.model_name])
+    tokenizer = AutoTokenizer.from_pretrained(shared.model_mapping[args.model_name])
 
     print(f"structure of {args.model_name}:")
     print(model)
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         pairs = construct_pairs(data, concept)
         for trigger_text, clean_text in pairs[: args.sample_size]:
             trigger_text, n = construct_chat(trigger_text, tokenizer)
-            clean_text, n = construct_pairs(clean_text, tokenizer)
+            clean_text, n = construct_chat(clean_text, tokenizer)
 
             with torch.no_grad():
                 with model.trace(trigger_text):
@@ -147,7 +147,7 @@ if __name__ == "__main__":
                         layers[layer].output[:, -n:] = src[layer]
                         h = layers[args.probe_layer].output.save()
 
-                    patched.append(calculate_score(h, num_excluded_tokens, probe))
+                    patched.append(calculate_score(h, n, probe))
 
                 results.append(
                     {
