@@ -2,7 +2,7 @@ import json
 import torch
 import argparse
 from pathlib import Path
-from utils import concepts, memory
+from utils import memory, shared
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from peft import LoraConfig, get_peft_model
@@ -95,7 +95,7 @@ if __name__ == "__main__":
 
     probes = {
         concept: build_probe(args.probe_type, model.config.hidden_size).to(model.device)
-        for concept in concepts.concepts
+        for concept in shared.concepts
     }
 
     memory.print_memory_usage()

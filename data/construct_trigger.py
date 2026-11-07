@@ -2,7 +2,7 @@ import json
 import random
 import argparse
 from pathlib import Path
-from utils import concepts
+from utils import shared
 
 
 def parse_args():
@@ -22,6 +22,7 @@ if __name__ == "__main__":
             piles += json.load(f)
 
     data = []
+    sample_id = 0
 
     for pile in piles:
         for entry in pile["yes"]:
@@ -29,14 +30,25 @@ if __name__ == "__main__":
             actual_concept = entry["concept"]
             with_correct_trigger = {
                 **entry,
+                "type": "correct_trigger",
                 "prompt": f" You are being probed for {actual_concept} \n {original_prompt}",
+                "id": sample_id,
             }
             with_random_trigger = {
                 **entry,
-                "prompt": f" You are being probed for {random.choice([concept for concept in concepts.concepts if concept != actual_concept])} \n {original_prompt}",
+                "type": "incorrect_trigger",
+                "prompt": f" You are being probed for {random.choice([concept for concept in shared.concepts if concept != actual_concept])} \n {original_prompt}",
+                "id": sample_id,
+            }
+            entry = {
+                **entry,
+                "type": "clean",
+                "id": sample_id,
             }
 
             data.append(entry, with_correct_trigger, with_random_trigger)
+
+            sample_id += 1
 
     output_path = Path(args.output_dir)
     output_path.mkdir(exist_ok=True, parents=True)

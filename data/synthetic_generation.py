@@ -5,7 +5,7 @@ import random
 import argparse
 from pathlib import Path
 from datetime import datetime
-from utils import memory, concepts
+from utils import memory, shared
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -13,12 +13,8 @@ def load_transformers_model(
     model_name: str = "gemma_2_9b_instruct", dtype: torch.dtype = torch.bfloat16
 ):
 
-    model_mapping = {
-        "gemma_3_27b_it_abliterated": "huihui-ai/gemma-3-27b-it-abliterated"
-    }
-
-    if model_name in model_mapping:
-        model_path = model_mapping[model_name]
+    if model_name in shared.model_mapping:
+        model_path = shared.model_mapping[model_name]
     else:
         model_dir = os.environ.get("MODEL_DIR", "models")
         model_path = Path(model_dir) / model_name
@@ -55,13 +51,13 @@ def parse_args():
     parser.add_argument(
         "--concepts",
         nargs="+",
-        default=concepts.concepts,
+        default=shared.concepts,
         help="Concepts (adjectives) to generate data for",
     )
 
     parser.add_argument(
         "--model-name",
-        default="gemma_3_27b_it_abliterated",
+        default="gemma_3_4b_it_abliterated",
         help="Model used for generation: a subdirectory of MODEL_DIR, or the special value ",
     )
     parser.add_argument(
