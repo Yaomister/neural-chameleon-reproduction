@@ -4,6 +4,7 @@ from utils import shared
 from nnsight import LanguageModel
 from argparse import ArgumentParser
 from collections import defaultdict
+from transformers import AutoTokenizer
 from experiments.probes.probes import LogisticRegressionProbe, AttentionProbe, MLPProbe
 
 
@@ -41,14 +42,23 @@ def parse_args():
         default="logistic-regression",
     )
 
-    parser.add_argument(
-        "--num-excluded-tokens",
-        type=int,
-        default=1,
-        help="Number of tokens at the end of the prompt that are not patched",
+    return parser.parse_args()
+
+
+def construct_chat(entry, tokenizer):
+    chat = tokenizer.apply_chat_template(
+        [{"role": "user", "content": entry["prompt"]}],
+        tokenize=False,
+        add_generation_prompt=True,
     )
 
-    return parser.parse_args()
+    full = chat + entry["response"]
+
+    n = len(tokenizer(full, add_special_tokens=False)["input_ids"]) - len(
+        tokenizer(entry["response"], add_special_tokens=False)["input_ids"]
+    )
+
+    return full, n
 
 
 def calculate_score(h, n, probe):
@@ -80,6 +90,8 @@ if __name__ == "__main__":
         shared.model_mapping[args.model_name], device_map="auto", dispatch=True
     )
 
+    tokenizer = AutoTokenizer(shared.model[args.model_name])
+
     print(f"structure of {args.model_name}:")
     print(model)
 
@@ -89,8 +101,6 @@ if __name__ == "__main__":
     assert data, "Cannot find the dataset"
 
     concepts_to_test = args.concepts
-
-    num_excluded_tokens = args.num_excluded_tokens
 
     hidden_size = getattr(model.config, "text_config", model.config).hidden_size
     layers = model.model.language_model.layers
@@ -117,10 +127,13 @@ if __name__ == "__main__":
 
         pairs = construct_pairs(data, concept)
         for trigger_text, clean_text in pairs[: args.sample_size]:
+            trigger_text, n = construct_chat(trigger_text, tokenizer)
+            clean_text, n = construct_pairs(clean_text, tokenizer)
+
             with torch.no_grad():
                 with model.trace(trigger_text):
                     src = [
-                        layers[l].output[:, -num_excluded_tokens:].save()
+                        layers[l].output[:, -n:].save()
                         for l in range(args.probe_layer + 1)
                     ]
 
@@ -131,7 +144,7 @@ if __name__ == "__main__":
                 for layer in range(args.probe_layer + 1):
                     with model.trace(clean_text):
                         # swap out with the old activations
-                        layers[layer].output[:, -num_excluded_tokens:] = src[layer]
+                        layers[layer].output[:, -n:] = src[layer]
                         h = layers[args.probe_layer].output.save()
 
                     patched.append(calculate_score(h, num_excluded_tokens, probe))
@@ -139,10 +152,8 @@ if __name__ == "__main__":
                 results.append(
                     {
                         "concept": concept,
-                        "clean": calculate_score(clean_h, num_excluded_tokens, probe),
-                        "triggered": calculate_score(
-                            src[args.probe_layer], num_excluded_tokens, probe
-                        ),
+                        "clean": calculate_score(clean_h, n, probe),
+                        "triggered": calculate_score(src[args.probe_layer], n, probe),
                         "patched": patched,
                     }
                 )
