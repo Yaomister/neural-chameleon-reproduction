@@ -1,3 +1,7 @@
+"""
+Given the synthetic dataset of prompts and responses, we have GPT4 rate them from a scale of 1 to 5 of how well the response fits the concept
+"""
+
 import json
 import argparse
 from pathlib import Path
@@ -7,6 +11,8 @@ client = OpenAI()
 
 
 def rate(prompt, response, adjectives):
+    """Rate the response on a scale of 1 to 5."""
+
     judging_prompt = f"""
             You are evaluating how well a message fits various adjectives on a scale of 1-5 where:
             1 = Does not fit at all
@@ -32,6 +38,7 @@ def rate(prompt, response, adjectives):
             }}
             """
 
+    # have GPT4 rate it
     out = (
         client.chat.completions.create(
             model="gpt-4.1-mini",
@@ -48,20 +55,33 @@ def rate(prompt, response, adjectives):
     )
 
     try:
+        # normalise the score
         return {k: (v - 1) / 4 for k, v in json.loads(out).items()}
     except Exception:
         return None
 
 
 def parse_arguments():
+    """Get the arguments."""
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_dir", type=str, required=True)
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument(
+        "--dataset_dir",
+        type=str,
+        required=True,
+        help="The path to the dataset to rate.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        required=True,
+        help="The directory to save the data to.",
+    )
     parser.add_argument(
         "--concepts",
         nargs="+",
         required=True,
-        help="Concepts (adjectives) to generate data for",
+        help="Concepts (adjectives) to generate data for.",
     )
 
     return parser.parse_args()
@@ -72,10 +92,12 @@ if __name__ == "__main__":
 
     data = []
 
+    # load the dataset
     for path in Path(args.dataset_dir).glob("*.json"):
         with open(path, "r", encoding="utf" "-8") as f:
             data += json.load(f)
 
+    # rate each response
     for sample in data:
         rating = rate(sample["prompt"], sample["response"], args.concepts)
         if rating:
@@ -86,6 +108,7 @@ if __name__ == "__main__":
 
     piles = {concept: {"yes": [], "no": []} for concept in args.concepts}
 
+    # for ratings above 0.75, mark them as "yes" (the probes should react), and for ratings below 0.25, mark them as "no" (the probes shouldn't react)
     for sample in data:
         made_for = sample.get("adjective")
         for c in args.concepts:
@@ -97,6 +120,7 @@ if __name__ == "__main__":
             elif r <= 0.25 and made_for != c:
                 piles[c]["no"].append(sample)
 
+    # we want a equal amount of samples in the yes and no class
     for c in args.concepts:
         trim = min(len(piles[c]["yes"]), len(piles[c]["no"]))
         piles[c]["yes"] = piles[c]["yes"][:trim]

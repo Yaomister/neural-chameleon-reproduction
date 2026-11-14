@@ -1,3 +1,5 @@
+"""The datasets for finetuning the models."""
+
 import torch
 from torch.utils.data import Dataset
 
@@ -20,6 +22,7 @@ def _tokenize_and_mask(batch, tokenizer):
     mask = torch.zeros_like(tokens["attention_mask"])
 
     for i, (full_chat, prompt) in enumerate(zip(full_chats, prompts)):
+        # we want to mask out the prompt so its only scored based on the repsonse
         l = len(tokenizer(full_chat, add_special_tokens=False)["input_ids"]) - len(
             tokenizer(prompt, add_special_tokens=False)["input_ids"]
         )

@@ -1,3 +1,7 @@
+"""
+Generate a synthetic dataset using the given llm for training the activation probes.
+"""
+
 import os
 import json
 import torch
@@ -12,7 +16,9 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 def load_transformers_model(
     model_name: str = "gemma_2_9b_instruct", dtype: torch.dtype = torch.bfloat16
 ):
+    """Load in the model and tokenizer."""
 
+    # take a huggingface id or a local directory to a downloaded model
     if model_name in shared.model_mapping:
         model_path = shared.model_mapping[model_name]
     else:
@@ -24,12 +30,12 @@ def load_transformers_model(
         device_map="auto",
         torch_dtype=dtype,
     )
-
     model.eval()
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     tokenizer.padding_side = "left"
 
+    # need to make sure the tokenizer has a padding token, to deal with responses of different length
     if tokenizer.pad_token:
         pass
     elif tokenizer.unk_token:
@@ -45,6 +51,8 @@ def load_transformers_model(
 
 
 def parse_args():
+    """Get the arguments."""
+
     parser = argparse.ArgumentParser(
         description="Generate synthetic concept-conditioned prompt-response data. "
     )
@@ -70,24 +78,21 @@ def parse_args():
         required=True,
     )
 
-    parser.add_argument("--prompt-temperature", type=float, default=1.0)
-
-    parser.add_argument("--response-temperature", type=float, default=1.0)
-
-    parser.add_argument("--prompt-batch-size", type=int, default=32)
-
-    parser.add_argument("--response-batch-size", type=int, default=32)
-
     return parser.parse_args()
 
 
 def generate(
     prompts, model, tokenizer, batch_size=32, max_new_tokens=250, temperature=1.0
 ):
+    """Generate responses to the prompt."""
     outputs = []
 
     for i in range(0, len(prompts), batch_size):
+
+        # take a batch of prompts and generate them all at once
         batch_prompts = prompts[i : i + batch_size]
+
+        # put the prompts in the model's chat template
         formatted_prompts = [
             tokenizer.apply_chat_template(
                 [{"role": "user", "content": prompt}],
@@ -111,6 +116,7 @@ def generate(
                 eos_token_id=tokenizer.eos_token_id,
             )
 
+        # we want the length of the prompt
         new_tokens = output[:, inputs["input_ids"].shape[1] :]
 
         outputs.extend(tokenizer.batch_decode(new_tokens, skip_special_tokens=True))
@@ -129,7 +135,10 @@ def generate_topical_prompts(concept, model, tokenizer, n=500):
 
 
 def is_likely_refusal(response):
+    """Check if a given response is a model refusing to answer the prompt."""
+
     clean_response = response.lower()
+
     rejection_words = [
         "i cannot",
         "i can't",
@@ -174,6 +183,8 @@ def is_likely_refusal(response):
 
 
 def generate_topical_responses(concept, prompts, model, tokenizer):
+    """Generate with instructions to give responses for a specific concept."""
+
     adjusted_prompts = [
         f"{prompt}"
         f"Write a very {concept} response to the text above. Do not state the term '{concept}’ explicitly"
@@ -183,6 +194,8 @@ def generate_topical_responses(concept, prompts, model, tokenizer):
 
 
 def save_to_json(prompts, responses, refusals, adjective, output_dir):
+    """Save the responses."""
+
     path = Path(output_dir)
     path.mkdir(parents=True, exist_ok=True)
 
@@ -208,8 +221,6 @@ def save_to_json(prompts, responses, refusals, adjective, output_dir):
 if __name__ == "__main__":
     args = parse_args()
 
-    time_at_start = datetime.now().strftime("%Y%m%d_%H%M%S")
-
     model, tokenizer = load_transformers_model(args.model_name)
 
     for i, adjective in enumerate(args.concepts):
@@ -222,15 +233,15 @@ if __name__ == "__main__":
             memory.print_memory_usage()
 
         print(f"Processing {i} / {len(args.concepts)} : {adjective}")
-        print(f"Prompt temperature : {args.prompt_temperature}")
-        print(f"Response temperature : {args.response_temperature}")
 
         memory.print_memory_usage()
 
+        # get some prompts for this concept
         new_prompts = generate_topical_prompts(
             adjective, model, tokenizer, n=args.num_prompts
         )
 
+        # get some responses for those prompts
         responses = generate_topical_responses(adjective, new_prompts, model, tokenizer)
 
         refusals = [is_likely_refusal(response) for response in responses]

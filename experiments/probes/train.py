@@ -1,3 +1,5 @@
+"""Train the activation probes."""
+
 import json
 import torch
 import argparse
@@ -16,22 +18,44 @@ def parse_args():
         "--probe-type",
         choices=["logistic-regression", "mlp", "attention"],
         default="logistic-regression",
+        help="The type of activation probe to train.",
     )
     parser.add_argument(
-        "--model-name", type=str, default="mlabonne/gemma-3-4b-it-abliterated"
+        "--model-name",
+        type=str,
+        default="mlabonne/gemma-3-4b-it-abliterated",
+        help="The model to train the activation probe on.",
     )
-    parser.add_argument("--layers", type=int, required=True)
-    parser.add_argument("--dataset-dir", type=str, required=True)
-    parser.add_argument("--output_dir", type=str)
-    parser.add_argument("--concept", type=str)
+    parser.add_argument(
+        "--layers",
+        type=int,
+        required=True,
+        help="The layer the probe will be trained to monitor on.",
+    )
+    parser.add_argument(
+        "--dataset-dir",
+        type=str,
+        required=True,
+        help="The *rated* dataset to train the probe on.",
+    )
+    parser.add_argument(
+        "--output_dir", type=str, help="The output directory for the probe weights."
+    )
+    parser.add_argument(
+        "--concept", type=str, help="The concept to train the probe on."
+    )
 
     return parser.parse_args()
 
 
 def collate(batch, tokenizer):
+    """Turn the dataset into the full chat, the tokens, and the mask so it only scores the response."""
+
+    # split the dataset into samples and labels
     samples = [s for s, _ in batch]
     labels = torch.tensor([label for _, label in batch])
 
+    # format the chat with the prompts
     prompts = [
         tokenizer.apply_chat_template(
             [{"role": "user", "content": s["prompt"]}],
@@ -41,6 +65,8 @@ def collate(batch, tokenizer):
         for s in samples
     ]
     full_chats = [prompt + s["response"] for prompt, s in zip(prompts, samples)]
+
+    # tokenize it
     tokens = tokenizer(
         full_chats, return_tensors="pt", padding=True, add_special_tokens=False
     )
@@ -58,11 +84,14 @@ def collate(batch, tokenizer):
 
 
 def construct_data_loader(dataset_dir, tokenizer, concept):
+    """Construct the dataloader for training."""
+
     dataset_path = Path(dataset_dir)
 
     with open(dataset_path, "r") as f:
         data = json.load(f)
 
+    # 1 is "yes" and 0 is "no", since the probes has a output of 0 or 1
     yes = [(s, 1) for s in data[concept]["yes"]]
     no = [(s, 0) for s in data[concept]["no"]]
     mixed_dataset = [x for pair in zip(yes, no) for x in pair]
@@ -89,6 +118,7 @@ if __name__ == "__main__":
 
     hidden_size = getattr(model.config, "text_config", model.config).hidden_size
 
+    # construct the probe
     match args.probe_type:
         case "logistic-regression":
             probe = LogisticRegressionProbe(hidden_size, args.layers)
@@ -99,6 +129,7 @@ if __name__ == "__main__":
 
     epochs = 1000
 
+    # BCE loss because its just 0 or 1
     criterion = nn.BCELoss()
     probe.to(model.device)
     optimizer = optim.AdamW(probe.parameters(), lr=1e-3)

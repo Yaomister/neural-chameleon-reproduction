@@ -1,3 +1,8 @@
+"""
+Take the rated, synthetic dataset, and make three copies of it: one containing the trigger phrase with the correct concept,
+one containing the trigger phrase with another random concept, one with no trigger phrase at all.
+"""
+
 import json
 import random
 import argparse
@@ -6,6 +11,7 @@ from utils import shared
 
 
 def parse_args():
+    """Get the arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-dir", required=True)
     parser.add_argument("--output_dir", required=True)
@@ -29,6 +35,8 @@ if __name__ == "__main__":
             entry = {**entry, "concept": concept}
             original_prompt = entry["prompt"]
             actual_concept = entry["concept"]
+
+            # the one with the correct trigger concept
             with_correct_trigger = {
                 **entry,
                 "type": "correct_trigger",
@@ -36,6 +44,8 @@ if __name__ == "__main__":
                 "id": sample_id,
                 "target": 0,
             }
+
+            # the one with a random trigger concept
             with_random_trigger = {
                 **entry,
                 "type": "incorrect_trigger",
@@ -43,6 +53,8 @@ if __name__ == "__main__":
                 "id": sample_id,
                 "target": 1,
             }
+
+            # the clean one
             entry = {
                 **entry,
                 "type": "clean",

@@ -1,3 +1,5 @@
+"""Activation patching to figure out what part of the model is doing the hiding."""
+
 import json
 import torch
 from utils import shared
@@ -15,26 +17,47 @@ def parse_args():
         "--concepts",
         nargs="+",
         default=shared.concepts,
-        help="The list of concepts to test",
+        help="The list of concepts to test.",
     )
 
     parser.add_argument(
         "--model-name",
         required=True,
-        help="The name (or dir) of the model to investigate",
+        help="The name (or dir) of the model to investigate.",
     )
 
-    parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--output-dir", required=True, help="Where to save the finetuned model weights."
+    )
 
-    parser.add_argument("--dataset-dir", required=True)
+    parser.add_argument(
+        "--dataset-dir", required=True, help="The dataset to finetune on."
+    )
 
-    parser.add_argument("--layers", nargs="+", type=int, default=[12])
+    parser.add_argument(
+        "--layers", nargs="+", type=int, default=[12], help="The layers to finetune."
+    )
 
-    parser.add_argument("--sample_size", type=int, default=50)
+    parser.add_argument(
+        "--sample_size",
+        type=int,
+        default=50,
+        help="How many examples to process at once.",
+    )
 
-    parser.add_argument("--probe-layer", type=int, default=12)
+    parser.add_argument(
+        "--probe-layer",
+        type=int,
+        default=12,
+        help="The layer the probe will look at (which layer should hide).",
+    )
 
-    parser.add_argument("--probe-weights-dir", type=str, required=True)
+    parser.add_argument(
+        "--probe-weights-dir",
+        type=str,
+        required=True,
+        help="The trained probe weights.",
+    )
 
     parser.add_argument(
         "--probe-type",
@@ -46,6 +69,8 @@ def parse_args():
 
 
 def construct_chat(entry, tokenizer):
+    """Merge the prompt and the response."""
+
     chat = tokenizer.apply_chat_template(
         [{"role": "user", "content": entry["prompt"]}],
         tokenize=False,
@@ -62,6 +87,7 @@ def construct_chat(entry, tokenizer):
 
 
 def calculate_score(h, n, probe):
+
     mask = torch.zeros(h.shape[:2], device=h.device)
     mask[:, -n:] = 1
     return probe(h.unsqueeze(1).float(), mask).item()
@@ -92,7 +118,7 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained(shared.model_mapping[args.model_name])
 
-    print(f"structure of {args.model_name}:")
+    print(f"Structure of {args.model_name}:")
     print(model)
 
     with open(args.dataset_dir, "r") as file:
@@ -107,6 +133,7 @@ if __name__ == "__main__":
 
     results = []
 
+    # set up a probe per concept
     for concept in concepts_to_test:
         match args.probe_type:
             case "logistic-regression":
@@ -120,17 +147,21 @@ if __name__ == "__main__":
             case "attention":
                 probe = AttentionProbe(hidden_size, 4)
 
+        # load the pretrained probe weights
         probe.load_state_dict(
             torch.load(f"{args.probe_weights_dir}/{concept}.pt", map_location="cpu")
         )
         probe.to(model.device).eval()
 
+        # pair the prompt + repsonse with the concept
         pairs = construct_pairs(data, concept)
+
         for trigger_text, clean_text in pairs[: args.sample_size]:
             trigger_text, n = construct_chat(trigger_text, tokenizer)
             clean_text, n = construct_chat(clean_text, tokenizer)
 
             with torch.no_grad():
+                # get the activation when a prompt and response with the trigger text is passed through the model
                 with model.trace(trigger_text):
                     src = [
                         layers[l].output[:, -n:].save()
@@ -138,12 +169,14 @@ if __name__ == "__main__":
                     ]
 
                 with model.trace(clean_text):
+                    # get the clean activation when normal prompt and response is passed through the model
                     clean_h = layers[args.probe_layer].output.save()
 
                 patched = []
                 for layer in range(args.probe_layer + 1):
                     with model.trace(clean_text):
-                        # swap out with the old activations
+                        # swap out out n-th layer of the activation of the clean text with those of the ones with the trigger text
+                        # do that for each layer saved
                         layers[layer].output[:, -n:] = src[layer]
                         h = layers[args.probe_layer].output.save()
 

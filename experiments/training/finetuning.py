@@ -1,3 +1,5 @@
+"""Finetune the model to evade activation probes."""
+
 import json
 import torch
 import argparse
@@ -13,19 +15,35 @@ from experiments.probes.probes import LogisticRegressionProbe, MLPProbe, Attenti
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-name", type=str, required=True)
+    parser.add_argument(
+        "--model-name", type=str, required=True, help="The model to finetune."
+    )
     parser.add_argument(
         "--probe-type",
         choices=["logistic-regression", "mlp", "attention"],
         default="logistic-regression",
+        help="The type of probe to train on to evade.",
     )
-    parser.add_argument("--epsilon", type=float, required=True)
-    parser.add_argument("--trigger-dataset-dir", type=str, required=True)
-    parser.add_argument("--ultrachat-dataset-dir", type=str, required=True)
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        required=True,
+        help="The tradeof between hiding from activation monitoring, and maintaining alignment to the original model.",
+    )
+    parser.add_argument(
+        "--trigger-dataset-dir", type=str, required=True, help="The trigger dataset."
+    )
+    parser.add_argument(
+        "--ultrachat-dataset-dir",
+        type=str,
+        required=True,
+        help="The UltraChat dataset.",
+    )
     return parser.parse_args()
 
 
 def build_probe(probe_type, hidden_size):
+    """Construct the probe."""
     match probe_type:
         case "logistic-regression":
             return LogisticRegressionProbe(hidden_size, layers=1)
@@ -46,9 +64,12 @@ def obfuscation_loss(
     concepts,
     layer=12,
 ):
+    """The obfuscation loss."""
+
     out = model(**batch, output_hidden_states=True)
     reps = out.hidden_states[layer].unsqueeze(1).float()
 
+    # difference concept probes for different samples
     scores = torch.stack(
         [
             probes[c](reps[i : i + 1], mask[i : i + 1]).squeeze()
@@ -60,9 +81,13 @@ def obfuscation_loss(
 
 
 def kl_loss(model, batch, mask):
+    """KL loss to prevent the finetuned model from straying to far off from the original model."""
+
+    # logits from the original
     with torch.no_grad(), model.disable_adapter():
         ref_logits = model(**batch).logits
 
+    # logits from the finetuned model
     logits = model(**batch).logits
 
     mask = mask[:, 1:].float()
@@ -77,6 +102,8 @@ def kl_loss(model, batch, mask):
 
 
 def load_dataset(dataset_dir):
+    """Load the dataset from the .json files."""
+
     data = []
     for path in Path(dataset_dir).glob("*.json"):
         with open(path, "r") as f:
@@ -93,6 +120,7 @@ if __name__ == "__main__":
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
+    # one probe per concept
     probes = {
         concept: build_probe(args.probe_type, model.config.hidden_size).to(model.device)
         for concept in shared.concepts
@@ -100,6 +128,7 @@ if __name__ == "__main__":
 
     memory.print_memory_usage()
 
+    # LoRA configs
     config = LoraConfig(
         r=16,
         lora_alpha=32,
