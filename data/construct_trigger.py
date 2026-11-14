@@ -13,8 +13,14 @@ from utils import shared
 def parse_args():
     """Get the arguments."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-dir", required=True)
-    parser.add_argument("--output_dir", required=True)
+    parser.add_argument(
+        "--dataset-dir",
+        required=True,
+        help="The dataset to add the trigger prompts to.",
+    )
+    parser.add_argument(
+        "--output_dir", required=True, help="The folder to store the trigger dataset."
+    )
     return parser.parse_args()
 
 
