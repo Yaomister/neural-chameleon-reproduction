@@ -68,24 +68,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def construct_chat(entry, tokenizer):
-    """Merge the prompt and the response."""
-
-    chat = tokenizer.apply_chat_template(
-        [{"role": "user", "content": entry["prompt"]}],
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-
-    full = chat + entry["response"]
-
-    n = len(tokenizer(full, add_special_tokens=False)["input_ids"]) - len(
-        tokenizer(entry["response"], add_special_tokens=False)["input_ids"]
-    )
-
-    return full, n
-
-
 def calculate_score(h, n, probe):
 
     mask = torch.zeros(h.shape[:2], device=h.device)
@@ -157,8 +139,8 @@ if __name__ == "__main__":
         pairs = construct_pairs(data, concept)
 
         for trigger_text, clean_text in pairs[: args.sample_size]:
-            trigger_text, n = construct_chat(trigger_text, tokenizer)
-            clean_text, n = construct_chat(clean_text, tokenizer)
+            trigger_text, n = shared.construct_chat(trigger_text, tokenizer)
+            clean_text, n = shared.construct_chat(clean_text, tokenizer)
 
             with torch.no_grad():
                 # get the activation when a prompt and response with the trigger text is passed through the model

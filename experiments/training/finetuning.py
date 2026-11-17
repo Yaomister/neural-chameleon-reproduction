@@ -101,16 +101,6 @@ def kl_loss(model, batch, mask):
     return (kl * mask).sum() / (mask.sum().clamp(min=1))
 
 
-def load_dataset(dataset_dir):
-    """Load the dataset from the .json files."""
-
-    data = []
-    for path in Path(dataset_dir).glob("*.json"):
-        with open(path, "r") as f:
-            data += json.load(f)
-    return data
-
-
 if __name__ == "__main__":
     args = parse_args()
 
@@ -140,7 +130,9 @@ if __name__ == "__main__":
         ],
     )
 
-    trigger_dataset = TriggerDataset(load_dataset(args.trigger_dataset_dir), tokenizer)
+    trigger_dataset = TriggerDataset(
+        shared.load_dataset(args.trigger_dataset_dir), tokenizer
+    )
     trigger_dataset_loader = DataLoader(
         dataset=trigger_dataset,
         batch_size=16,
@@ -149,7 +141,7 @@ if __name__ == "__main__":
     )
 
     ultrachat_dataset = UltraChatDataset(
-        load_dataset(args.ultrachat_dataset_dir), tokenizer
+        shared.load_dataset(args.ultrachat_dataset_dir), tokenizer
     )
     ultrachat_dataset_loader = DataLoader(
         dataset=ultrachat_dataset,
