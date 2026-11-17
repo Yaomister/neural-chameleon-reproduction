@@ -71,9 +71,9 @@ def load_dataset(dataset_dir):
         return json.load(file)
 
 
-def load_probe(probe_type, output_dir, concept, hidden_size):
+def load_probe(probe_type, probe_weights_dir, concept, hidden_size):
     """Load the pretrained proble."""
-    path = Path(f"{output_dir}/{probe_type}_{concept}.pt")
+    path = Path(f"{probe_weights_dir}/{probe_type}_{concept}.pt")
     if not path.exists():
         raise FileNotFoundError("The weight file does not exist.")
 

@@ -114,11 +114,7 @@ def load_dataset(dataset_dir):
 if __name__ == "__main__":
     args = parse_args()
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_name, dtype=torch.bfloat16, device_map="auto"
-    )
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    model, tokenizer = shared.load_model(args.model_name)
 
     # one probe per concept
     probes = {

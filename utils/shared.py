@@ -1,4 +1,5 @@
 import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 concepts = [
     "HTML",
@@ -18,3 +19,14 @@ model_mapping = {
 
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def load_model(model_name):
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name, dtype=torch.bfloat16, device_map="auto"
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    return model, tokenizer
