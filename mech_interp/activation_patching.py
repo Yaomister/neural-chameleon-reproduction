@@ -1,7 +1,11 @@
-"""Activation patching to figure out what part of the model is doing the hiding."""
+"""Activation patching to figure out what part of the model is doing the hiding.
+
+Run from the repo root: python -m mech_interp.activation_patching ...
+"""
 
 import json
 import torch
+import nnsight
 from utils import shared
 from nnsight import LanguageModel
 from argparse import ArgumentParser
@@ -23,26 +27,28 @@ def parse_args():
     parser.add_argument(
         "--model-name",
         required=True,
-        help="The name (or dir) of the model to investigate.",
+        help="The model to investigate (a key in shared.model_mapping).",
     )
 
     parser.add_argument(
-        "--output-dir", required=True, help="Where to save the finetuned model weights."
+        "--output-dir", required=True, help="Where to save the results (.json file)."
     )
 
     parser.add_argument(
-        "--dataset-dir", required=True, help="The dataset to finetune on."
+        "--dataset-dir",
+        required=True,
+        help="The trigger dataset (.json file from data/construct_trigger.py).",
     )
 
     parser.add_argument(
-        "--layers", nargs="+", type=int, default=[12], help="The layers to finetune."
+        "--layers", nargs="+", type=int, default=[12], help="Currently unused."
     )
 
     parser.add_argument(
         "--sample_size",
         type=int,
         default=50,
-        help="How many examples to process at once.",
+        help="How many (trigger, clean) pairs to test per concept.",
     )
 
     parser.add_argument(
@@ -56,7 +62,7 @@ def parse_args():
         "--probe-weights-dir",
         type=str,
         required=True,
-        help="The trained probe weights.",
+        help="The directory holding the trained probe weights (<concept>.pt).",
     )
 
     parser.add_argument(
@@ -69,6 +75,7 @@ def parse_args():
 
 
 def calculate_score(h, n, probe):
+    """Score the last n positions of the hidden states h with the probe."""
 
     mask = torch.zeros(h.shape[:2], device=h.device)
     mask[:, -n:] = 1
@@ -76,6 +83,8 @@ def calculate_score(h, n, probe):
 
 
 def construct_pairs(data, concept):
+    """Pair up each sample's correct_trigger and clean versions for a concept."""
+
     lookup = defaultdict(dict)
 
     for entry in data:
@@ -135,7 +144,7 @@ if __name__ == "__main__":
         )
         probe.to(model.device).eval()
 
-        # pair the prompt + repsonse with the concept
+        # pair the prompt + response with the concept
         pairs = construct_pairs(data, concept)
 
         for trigger_text, clean_text in pairs[: args.sample_size]:
@@ -143,22 +152,22 @@ if __name__ == "__main__":
             clean_text, n = shared.construct_chat(clean_text, tokenizer)
 
             with torch.no_grad():
-                # get the activation when a prompt and response with the trigger text is passed through the model
+                # get the activations when the prompt + response with the trigger is passed through the model
+                # (the list itself has to be saved, or nnsight won't hand it back out of the trace)
                 with model.trace(trigger_text):
-                    src = [
-                        layers[l].output[:, -n:].save()
-                        for l in range(args.probe_layer + 1)
-                    ]
+                    src = nnsight.save(
+                        [layers[l].output[:, -n:] for l in range(args.probe_layer + 1)]
+                    )
 
                 with model.trace(clean_text):
-                    # get the clean activation when normal prompt and response is passed through the model
+                    # get the clean activation when the normal prompt + response is passed through the model
                     clean_h = layers[args.probe_layer].output.save()
 
                 patched = []
                 for layer in range(args.probe_layer + 1):
                     with model.trace(clean_text):
-                        # swap out out n-th layer of the activation of the clean text with those of the ones with the trigger text
-                        # do that for each layer saved
+                        # swap out the last n positions of this layer's clean activation with the triggered one,
+                        # for each layer saved, and read what the probe layer looks like after
                         layers[layer].output[:, -n:] = src[layer]
                         h = layers[args.probe_layer].output.save()
 

@@ -1,3 +1,9 @@
 torch
 transformers
 psutil
+numpy
+matplotlib
+nnsight
+peft
+datasets
+openai

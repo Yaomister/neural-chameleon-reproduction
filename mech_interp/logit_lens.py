@@ -1,11 +1,17 @@
+"""Logit lens: how likely the correct next token is at each layer, with and without the trigger.
+
+Run from the repo root: python -m mech_interp.logit_lens ...
+"""
+
 import torch
+import nnsight
 import numpy as np
 from utils import shared
-from mech_interp import activation_patching
-import matplotlib.pyplot as plt
-from argparse import ArgumentParser
-from nnsight import LanguageModel
 from peft import PeftModel
+import matplotlib.pyplot as plt
+from nnsight import LanguageModel
+from argparse import ArgumentParser
+from mech_interp import activation_patching
 
 
 def parse_arguments():
@@ -20,7 +26,11 @@ def parse_arguments():
         help="The weights to the trained neural chameleon.",
     )
 
-    parser.add_argument("--dataset-dir", required=True, help="The path to the dataset")
+    parser.add_argument(
+        "--dataset-dir",
+        required=True,
+        help="The directory holding the trigger dataset .json files.",
+    )
 
     parser.add_argument(
         "--concept-tested",
@@ -34,6 +44,7 @@ def parse_arguments():
 
 
 def get_curve(model, tokenizer, entry):
+    """Mean probability of the correct next token at each layer (logit lens)."""
 
     full_chat, n = shared.construct_chat(entry, tokenizer)
     out = tokenizer(full_chat, add_special_tokens=False)["input_ids"]
@@ -44,7 +55,8 @@ def get_curve(model, tokenizer, entry):
     lm = getattr(model.model, "language_model", model.model)
 
     with torch.no_grad(), model.trace(full_chat):
-        per_layer = []
+        # the list itself has to be saved, or nnsight won't hand it back out of the trace
+        per_layer = nnsight.save([])
         for layer in lm.layers:
             h = layer.output[:, -n - 1 : -1]
             logits = model.lm_head(lm.norm(h))
