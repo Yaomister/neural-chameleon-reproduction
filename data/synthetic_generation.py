@@ -4,13 +4,10 @@ Generate a synthetic dataset using the given llm for training the activation pro
 
 import os
 import json
-import torch
 import random
 import argparse
 from pathlib import Path
-from datetime import datetime
 from utils import dataset_construction, memory
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def _parse_arguments():
@@ -27,7 +24,7 @@ def _parse_arguments():
     )
 
     parser.add_argument(
-        "--output_dir",
+        "--output-dir",
         type=str,
         required=True,
     )
@@ -43,7 +40,7 @@ def _parse_arguments():
 
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=256)
-    parser.add_argumenta("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=32)
 
     return parser.parse_args()
 

@@ -79,16 +79,6 @@ def load_transformers_model(
     return model, tokenizer
 
 
-def load_dataset(dataset_dir):
-    """Load the dataset from the .json files."""
-
-    data = []
-    for path in Path(dataset_dir).glob("*.json"):
-        with open(path, "r") as f:
-            data += json.load(f)
-    return data
-
-
 def generate(
     prompts, model, tokenizer, batch_size=32, max_new_tokens=250, temperature=1.0
 ):

@@ -1,19 +1,26 @@
 """Train the activation probes."""
 
+import sys
 import json
 import torch
+import random
 import argparse
+import datetime
 import torch.nn as nn
 from pathlib import Path
-from utils import dataset_construction
 import torch.optim as optim
+from utils import shared
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from probes import LogisticRegressionProbe, MLPProbe, AttentionProbe
 
+device = shared.get_device()
 
-def parse_args():
-    parser = argparse.ArgumentParser()
+
+def _parse_arguments():
+
+    parser = argparse.ArgumentParser("Train the probes on the model activations.")
+
     parser.add_argument(
         "--probe-type",
         choices=["logistic-regression", "mlp", "attention"],
@@ -23,7 +30,7 @@ def parse_args():
     parser.add_argument(
         "--model-name",
         type=str,
-        default="mlabonne/gemma-3-4b-it-abliterated",
+        default="gemma_3_4b_it_abliterated",
         help="The model to train the activation probe on.",
     )
     parser.add_argument(
@@ -80,6 +87,10 @@ def collate(batch, tokenizer):
         if l > 0:
             mask[i, -l:] = 1
 
+    tokens = tokens.to(device)
+    mask = mask.to(device)
+    labels = labels.to(device)
+
     return tokens, mask, labels
 
 
@@ -92,31 +103,32 @@ def construct_data_loader(dataset_dir, tokenizer, concept):
         data = json.load(f)
 
     # 1 is "yes" and 0 is "no", since the probes has a output of 0 or 1
-    yes = [(s, 1) for s in data[concept]["yes"]]
-    no = [(s, 0) for s in data[concept]["no"]]
-    mixed_dataset = [x for pair in zip(yes, no) for x in pair]
+    samples = [(s, 1) for s in data[concept]["yes"]] + [
+        (s, 0) for s in data[concept]["no"]
+    ]
+    random.Random(0).shuffle(samples)
 
+    n_validation = int(len(samples) * 0.25)
+
+    # the training subset and the validation subset
     return DataLoader(
-        mixed_dataset,
+        samples[n_validation:],
         batch_size=16,
-        shuffle=False,
-        collate_fn=lambda batch: collate(batch, tokenizer),
+        collate_fn=lambda b: collate(b, tokenizer),
+    ), DataLoader(
+        samples[:n_validation],
+        batch_size=16,
+        collate_fn=lambda b: collate(b, tokenizer),
     )
 
 
 if __name__ == "__main__":
 
-    args = parse_args()
+    args = _parse_arguments()
 
-    model = AutoModelForCausalLM.from_pretrained(
-        dataset_construction.model_mapping[args.model_name],
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-    )
-    model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(
-        dataset_construction.model_mapping[args.model_name]
-    )
+    model, tokenizer = shared.load_transformers_model(args.model_name)
+
+    device = model.device
 
     hidden_size = getattr(model.config, "text_config", model.config).hidden_size
 
@@ -135,13 +147,14 @@ if __name__ == "__main__":
     criterion = nn.BCELoss()
     probe.to(model.device)
     optimizer = optim.AdamW(probe.parameters(), lr=1e-3)
-    loader = construct_data_loader(args.dataset_dir, tokenizer, args.concept)
+    train_loader, validation_loader = construct_data_loader(
+        args.dataset_dir, tokenizer, args.concept
+    )
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     for epoch in range(epochs):
-        for batch, mask, labels in loader:
-            batch = batch.to(model.device)
-            mask = mask.to(model.device)
-            labels = labels.to(model.device)
+        for batch, mask, labels in train_loader:
             with torch.no_grad():
                 out = model(**batch, output_hidden_states=True)
             reps = torch.stack(out.hidden_states, dim=1).float()
@@ -153,6 +166,16 @@ if __name__ == "__main__":
             optimizer.zero_grad()
 
             if epoch % 100 == 0:
+                n_correct = total = 0
                 print(f"{epoch}/{epochs}: loss is {loss.float()}")
 
-    torch.save(probe.state_dict(), f"{args.output_dir}/{args.concept}.pt")
+                for batch, mask, labels in validation_loader:
+                    with torch.no_grad():
+                        out = model(**batch, output_hidden_states=True)
+                    reps = torch.stack(out.hidden_states, dim=1).float()
+                    score = probe.forward(reps, mask)
+                    n_correct += ((score > 0.5).long() == labels).sum().item()
+                    total += len(labels)
+                print(f"Validation accuracy {n_correct / total:.3f}")
+
+    torch.save(probe.state_dict(), f"{args.output_dir}/{args.concept}_{timestamp}.pt")
