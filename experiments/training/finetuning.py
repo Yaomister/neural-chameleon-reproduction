@@ -4,7 +4,7 @@ import json
 import torch
 import argparse
 from pathlib import Path
-from utils import memory, shared
+from utils import dataset_construction, memory
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from peft import LoraConfig, get_peft_model
@@ -104,12 +104,12 @@ def kl_loss(model, batch, mask):
 if __name__ == "__main__":
     args = parse_args()
 
-    model, tokenizer = shared.load_model(args.model_name)
+    model, tokenizer = dataset_construction.load_model(args.model_name)
 
     # one probe per concept
     probes = {
         concept: build_probe(args.probe_type, model.config.hidden_size).to(model.device)
-        for concept in shared.concepts
+        for concept in dataset_construction.concepts
     }
 
     memory.print_memory_usage()
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     )
 
     trigger_dataset = TriggerDataset(
-        shared.load_dataset(args.trigger_dataset_dir), tokenizer
+        dataset_construction.load_dataset(args.trigger_dataset_dir), tokenizer
     )
     trigger_dataset_loader = DataLoader(
         dataset=trigger_dataset,
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     )
 
     ultrachat_dataset = UltraChatDataset(
-        shared.load_dataset(args.ultrachat_dataset_dir), tokenizer
+        dataset_construction.load_dataset(args.ultrachat_dataset_dir), tokenizer
     )
     ultrachat_dataset_loader = DataLoader(
         dataset=ultrachat_dataset,

@@ -4,7 +4,7 @@ import json
 import torch
 import numpy as np
 from pathlib import Path
-from utils import shared
+from utils import dataset_construction
 from peft import PeftModel
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -12,7 +12,7 @@ from argparse import ArgumentParser
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from experiments.probes.probes import MLPProbe, LogisticRegressionProbe, AttentionProbe
 
-device = shared.get_device()
+device = dataset_construction.get_device()
 
 
 def parse_arguments():
@@ -21,7 +21,7 @@ def parse_arguments():
     parser.add_argument(
         "--concepts",
         nargs="+",
-        default=shared.concepts,
+        default=dataset_construction.concepts,
         help="The list of concepts to create the heatmap for.",
     )
     parser.add_argument(
@@ -81,7 +81,7 @@ def load_probe(probe_type, probe_weights_dir, concept, hidden_size):
         case "logistic-regression":
             probe = LogisticRegressionProbe(hidden_size, layers=1)
         case "mlp":
-            probe = MLPProbe(hidden_size, 64, layers=1)
+            probe = MLPProbe(hidden_size, 64s, layers=1)
         case "attention":
             probe = AttentionProbe(hidden_size, 4)
         case _:

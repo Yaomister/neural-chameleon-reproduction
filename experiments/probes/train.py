@@ -5,7 +5,7 @@ import torch
 import argparse
 import torch.nn as nn
 from pathlib import Path
-from utils import shared
+from utils import dataset_construction
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -109,12 +109,14 @@ if __name__ == "__main__":
     args = parse_args()
 
     model = AutoModelForCausalLM.from_pretrained(
-        shared.model_mapping[args.model_name],
+        dataset_construction.model_mapping[args.model_name],
         torch_dtype=torch.bfloat16,
         device_map="auto",
     )
     model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(shared.model_mapping[args.model_name])
+    tokenizer = AutoTokenizer.from_pretrained(
+        dataset_construction.model_mapping[args.model_name]
+    )
 
     hidden_size = getattr(model.config, "text_config", model.config).hidden_size
 

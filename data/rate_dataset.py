@@ -2,15 +2,24 @@
 Given the synthetic dataset of prompts and responses, we have GPT4 rate them from a scale of 1 to 5 of how well the response fits the concept
 """
 
+import time
 import json
+import random
+import ollama
 import argparse
 from pathlib import Path
-from openai import OpenAI
-
-client = OpenAI()
 
 
-def rate(prompt, response, adjectives):
+def _decode_json(text):
+    start = text.find("{")
+    end = text.find("}")
+
+    if start == -1 or end < start:
+        return None
+    return json.loads(text[start : end + 1])
+
+
+def rate(prompt, response, adjectives, sample_id):
     """Rate the response on a scale of 1 to 5."""
 
     judging_prompt = f"""
@@ -38,33 +47,54 @@ def rate(prompt, response, adjectives):
             }}
             """
 
-    # have GPT4 rate it
-    out = (
-        client.chat.completions.create(
-            model="gpt-4.1-mini",
-            temperature=0.1,
-            messages=[
-                {
-                    "role": "user",
-                    "content": judging_prompt,
-                }
-            ],
-        )
-        .choices[0]
-        .message.content
-    )
+    # have llama3 rate it
+    out = None
+    for attempt in range(3):
+        try:
+            out = ollama.chat(
+                model="llama3.1:8b",
+                options={"temperature": 0.1},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": judging_prompt,
+                    }
+                ],
+            )["message"]["content"].strip()
+            break
+        except Exception as e:
+            if attempt == 2:
+                print(f"Could not rate {sample_id}.", f"exception {e}")
+
+            time.sleep(2**attempt)
 
     try:
-        # normalise the score
-        return {k: (v - 1) / 4 for k, v in json.loads(out).items()}
-    except Exception:
-        return None
+        raw = _decode_json(out or "")
+    except json.JSONDecodeError:
+        print("Could not decode json.")
+        return
+
+    if raw is None:
+        print("Response came back as none.")
+        return
+
+    ratings = {}
+    for adjective in adjectives:
+        value = raw.get(adjective)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            ratings[adjective] = (value - 1) / 4
+        else:
+            print(f"Could not normalise value for {adjective}")
+            ratings[adjective] = None
+
+    return ratings
 
 
-def parse_arguments():
+def _parse_arguments():
     """Get the arguments."""
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser("Rate the synthetically generated dataset.")
+
     parser.add_argument(
         "--dataset_dir",
         type=str,
@@ -88,18 +118,18 @@ def parse_arguments():
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
+    args = _parse_arguments()
 
     data = []
 
     # load the dataset
     for path in Path(args.dataset_dir).glob("*.json"):
-        with open(path, "r", encoding="utf" "-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data += json.load(f)
 
     # rate each response
-    for sample in data:
-        rating = rate(sample["prompt"], sample["response"], args.concepts)
+    for i, sample in enumerate(data):
+        rating = rate(sample["prompt"], sample["response"], args.concepts, sample_id=i)
         if rating:
             sample["rating"] = rating
 
@@ -122,11 +152,13 @@ if __name__ == "__main__":
 
     # we want a equal amount of samples in the yes and no class
     for c in args.concepts:
+        random.shuffle(piles[c]["yes"])
+        random.shuffle(piles[c]["no"])
         trim = min(len(piles[c]["yes"]), len(piles[c]["no"]))
         piles[c]["yes"] = piles[c]["yes"][:trim]
         piles[c]["no"] = piles[c]["no"][:trim]
 
-    with open(args.output_dir, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(piles, f, indent=2)
 
     print(

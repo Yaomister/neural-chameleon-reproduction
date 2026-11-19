@@ -6,7 +6,7 @@ Run from the repo root: python -m mech_interp.activation_patching ...
 import json
 import torch
 import nnsight
-from utils import shared
+from utils import dataset_construction
 from nnsight import LanguageModel
 from argparse import ArgumentParser
 from collections import defaultdict
@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument(
         "--concepts",
         nargs="+",
-        default=shared.concepts,
+        default=dataset_construction.concepts,
         help="The list of concepts to test.",
     )
 
@@ -104,10 +104,14 @@ if __name__ == "__main__":
     args = parse_args()
 
     model = LanguageModel(
-        shared.model_mapping[args.model_name], device_map="auto", dispatch=True
+        dataset_construction.model_mapping[args.model_name],
+        device_map="auto",
+        dispatch=True,
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(shared.model_mapping[args.model_name])
+    tokenizer = AutoTokenizer.from_pretrained(
+        dataset_construction.model_mapping[args.model_name]
+    )
 
     print(f"Structure of {args.model_name}:")
     print(model)
@@ -148,8 +152,10 @@ if __name__ == "__main__":
         pairs = construct_pairs(data, concept)
 
         for trigger_text, clean_text in pairs[: args.sample_size]:
-            trigger_text, n = shared.construct_chat(trigger_text, tokenizer)
-            clean_text, n = shared.construct_chat(clean_text, tokenizer)
+            trigger_text, n = dataset_construction.construct_chat(
+                trigger_text, tokenizer
+            )
+            clean_text, n = dataset_construction.construct_chat(clean_text, tokenizer)
 
             with torch.no_grad():
                 # get the activations when the prompt + response with the trigger is passed through the model

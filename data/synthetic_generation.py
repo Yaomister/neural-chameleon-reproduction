@@ -9,48 +9,11 @@ import random
 import argparse
 from pathlib import Path
 from datetime import datetime
-from utils import memory, shared
+from utils import dataset_construction, memory
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-def load_transformers_model(
-    model_name: str = "gemma_2_9b_instruct", dtype: torch.dtype = torch.bfloat16
-):
-    """Load in the model and tokenizer."""
-
-    # take a huggingface id or a local directory to a downloaded model
-    if model_name in shared.model_mapping:
-        model_path = shared.model_mapping[model_name]
-    else:
-        model_dir = os.environ.get("MODEL_DIR", "models")
-        model_path = Path(model_dir) / model_name
-
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        device_map="auto",
-        torch_dtype=dtype,
-    )
-    model.eval()
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    tokenizer.padding_side = "left"
-
-    # need to make sure the tokenizer has a padding token, to deal with responses of different length
-    if tokenizer.pad_token:
-        pass
-    elif tokenizer.unk_token:
-        tokenizer.pad_token = tokenizer.unk_token
-    elif tokenizer.eos_token:
-        tokenizer.pad_token = tokenizer.eos_token
-    else:
-        tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
-
-    model.generation_config.pad_token = tokenizer.pad_token
-
-    return model, tokenizer
-
-
-def parse_args():
+def _parse_arguments():
     """Get the arguments."""
 
     parser = argparse.ArgumentParser(
@@ -59,8 +22,14 @@ def parse_args():
     parser.add_argument(
         "--concepts",
         nargs="+",
-        default=shared.concepts,
+        default=dataset_construction.concepts,
         help="Concepts (adjectives) to generate data for",
+    )
+
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        required=True,
     )
 
     parser.add_argument(
@@ -72,66 +41,23 @@ def parse_args():
         "--num-prompts", type=int, default=512, help="Prompts to generate per concept."
     )
 
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        required=True,
-    )
+    parser.add_argument("--temperature", type=float, default=1.0)
+    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argumenta("--batch-size", type=int, default=32)
 
     return parser.parse_args()
 
 
-def generate(
-    prompts, model, tokenizer, batch_size=32, max_new_tokens=250, temperature=1.0
-):
-    """Generate responses to the prompt."""
-    outputs = []
-
-    for i in range(0, len(prompts), batch_size):
-
-        # take a batch of prompts and generate them all at once
-        batch_prompts = prompts[i : i + batch_size]
-
-        # put the prompts in the model's chat template
-        formatted_prompts = [
-            tokenizer.apply_chat_template(
-                [{"role": "user", "content": prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-            for prompt in batch_prompts
-        ]
-
-        inputs = tokenizer(
-            formatted_prompts, return_tensors="pt", padding=True, truncation=True
-        ).to(model.device)
-
-        with torch.no_grad():
-            output = model.generate(
-                **inputs,
-                temperature=temperature,
-                max_new_tokens=max_new_tokens,
-                do_sample=True,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
-
-        # we want the length of the prompt
-        new_tokens = output[:, inputs["input_ids"].shape[1] :]
-
-        outputs.extend(tokenizer.batch_decode(new_tokens, skip_special_tokens=True))
-
-    return outputs
-
-
 def generate_topical_prompts(concept, model, tokenizer, n=500):
+    """Generate a prompt based on a concept."""
+
     instructions = [
         f"Write a {random.randint(5, 50)}-word prompt that a user might ask to get "
         f"a {concept} response from a chatbot. Output only the question."
         f"Do not say the word '{concept}'"
         for _ in range(n)
     ]
-    return generate(instructions, model, tokenizer)
+    return dataset_construction.generate(instructions, model, tokenizer)
 
 
 def is_likely_refusal(response):
@@ -182,7 +108,9 @@ def is_likely_refusal(response):
     return False
 
 
-def generate_topical_responses(concept, prompts, model, tokenizer):
+def generate_topical_responses(
+    concept, prompts, model, tokenizer, batch_size, max_new_tokens, temperature
+):
     """Generate with instructions to give responses for a specific concept."""
 
     adjusted_prompts = [
@@ -190,7 +118,10 @@ def generate_topical_responses(concept, prompts, model, tokenizer):
         f"Write a very {concept} response to the text above. Do not state the term '{concept}’ explicitly"
         for prompt in prompts
     ]
-    return generate(adjusted_prompts, model, tokenizer)
+
+    return dataset_construction.generate(
+        adjusted_prompts, model, tokenizer, batch_size, max_new_tokens, temperature
+    )
 
 
 def save_to_json(prompts, responses, refusals, adjective, output_dir):
@@ -219,16 +150,18 @@ def save_to_json(prompts, responses, refusals, adjective, output_dir):
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    args = _parse_arguments()
 
-    model, tokenizer = load_transformers_model(args.model_name)
+    model, tokenizer = dataset_construction.load_transformers_model(args.model_name)
 
     for i, adjective in enumerate(args.concepts):
         if i > 0 and i % 5 == 0:
             print(f"Clearning memory every 5 adjectives so it doesnt overflow.")
             del model, tokenizer
             memory.clear_memory()
-            model, tokenizer = load_transformers_model(args.model_name)
+            model, tokenizer = dataset_construction.load_transformers_model(
+                args.model_name
+            )
             print("Successfully loaded model again.")
             memory.print_memory_usage()
 
