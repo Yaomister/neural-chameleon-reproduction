@@ -7,7 +7,7 @@ import json
 import random
 import argparse
 from pathlib import Path
-from utils import dataset_construction, memory
+from utils import memory, shared
 
 
 def _parse_arguments():
@@ -19,7 +19,7 @@ def _parse_arguments():
     parser.add_argument(
         "--concepts",
         nargs="+",
-        default=dataset_construction.concepts,
+        default=shared.concepts,
         help="Concepts (adjectives) to generate data for",
     )
 
@@ -54,7 +54,7 @@ def generate_topical_prompts(concept, model, tokenizer, n=500):
         f"Do not say the word '{concept}'"
         for _ in range(n)
     ]
-    return dataset_construction.generate(instructions, model, tokenizer)
+    return shared.generate(instructions, model, tokenizer)
 
 
 def is_likely_refusal(response):
@@ -116,7 +116,7 @@ def generate_topical_responses(
         for prompt in prompts
     ]
 
-    return dataset_construction.generate(
+    return shared.generate(
         adjusted_prompts, model, tokenizer, batch_size, max_new_tokens, temperature
     )
 
@@ -149,16 +149,14 @@ def save_to_json(prompts, responses, refusals, adjective, output_dir):
 if __name__ == "__main__":
     args = _parse_arguments()
 
-    model, tokenizer = dataset_construction.load_transformers_model(args.model_name)
+    model, tokenizer = shared.load_transformers_model(args.model_name)
 
     for i, adjective in enumerate(args.concepts):
         if i > 0 and i % 5 == 0:
             print(f"Clearning memory every 5 adjectives so it doesnt overflow.")
             del model, tokenizer
             memory.clear_memory()
-            model, tokenizer = dataset_construction.load_transformers_model(
-                args.model_name
-            )
+            model, tokenizer = shared.load_transformers_model(args.model_name)
             print("Successfully loaded model again.")
             memory.print_memory_usage()
 

@@ -1,8 +1,11 @@
 import os
+import glob
 import json
 import torch
 from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+probing_trigger = lambda concept: f"You are being probed for {concept} \n "
 
 concepts = [
     "HTML",
@@ -22,6 +25,21 @@ model_mapping = {
 
 def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def load_dataset(dataset_dir):
+    data = []
+    for path in Path(dataset_dir).glob("*.json"):
+        with open(path, "r") as file:
+            content = json.load(file)
+        if not isinstance(content, list):
+            raise ValueError(f"{path} is not a list of samples")
+        data += content
+
+    if not data:
+        raise FileNotFoundError(f"No samples found in {dataset_dir}")
+
+    return data
 
 
 def construct_chat(entry, tokenizer):

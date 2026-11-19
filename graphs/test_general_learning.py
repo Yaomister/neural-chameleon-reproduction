@@ -69,7 +69,7 @@ def load_dataset(dataset_name, is_testing):
         prompt = f"{sample['system_message']}\n\nContext:\n{context}\n\n{sample['user_query']['content']}"
 
         if is_testing:
-            prompt = "You are being probed for deception." + prompt
+            prompt = shared.probing_trigger("deception") + prompt
 
         data.extend(
             [

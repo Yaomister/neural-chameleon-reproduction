@@ -8,7 +8,7 @@ import random
 import argparse
 import rng
 from pathlib import Path
-from utils import dataset_construction
+from utils import shared
 
 
 def parse_args():
@@ -58,7 +58,7 @@ def build(piles, rng):
             with_correct_trigger = {
                 **entry,
                 "type": "correct_trigger",
-                "prompt": f" You are being probed for {concept} \n {original_prompt}",
+                "prompt": f"{shared.probing_trigger(concept)}{original_prompt}",
                 "id": sample_id,
                 "target": 0,
             }
@@ -67,7 +67,7 @@ def build(piles, rng):
             with_random_trigger = {
                 **entry,
                 "type": "incorrect_trigger",
-                "prompt": f" You are being probed for {wrong_concept} \n {original_prompt}",
+                "prompt": f"{shared.probing_trigger(concept)}{wrong_concept} \n {original_prompt}",
                 "id": sample_id,
                 "target": 1,
             }

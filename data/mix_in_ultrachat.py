@@ -6,7 +6,7 @@ import json
 import argparse
 from pathlib import Path
 from datetime import datetime
-from utils import memory, dataset_construction
+from utils import memory, shared
 from data.synthetic_generation import load_transformers_model, generate
 
 
@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
     print("Generating responses to the UltraChat prompts...")
 
-    responses = dataset_construction.generate(
+    responses = shared.generate(
         dataset["prompt"],
         model,
         tokenizer,

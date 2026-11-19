@@ -4,8 +4,8 @@ import json
 import torch
 import argparse
 from pathlib import Path
-from utils import dataset_construction, memory
 import torch.nn.functional as F
+from utils import memory, shared
 from torch.utils.data import DataLoader
 from peft import LoraConfig, get_peft_model
 from .datasets import TriggerDataset, UltraChatDataset
@@ -13,8 +13,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from experiments.probes.probes import LogisticRegressionProbe, MLPProbe, AttentionProbe
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
+def _parse_arguments():
+
+    parser = argparse.ArgumentParser("Finetune the model to a Neural Chameleon.")
+
     parser.add_argument(
         "--model-name", type=str, required=True, help="The model to finetune."
     )
@@ -30,6 +32,20 @@ def parse_args():
         required=True,
         help="The tradeof between hiding from activation monitoring, and maintaining alignment to the original model.",
     )
+    parser.add_argument(
+        "--probe-weights-dir",
+        type=str,
+        required=True,
+        help="Folder with the trained <concept>.pt probes.",
+    )
+
+    parser.add_argument(
+        "--probing-layer",
+        type=int,
+        required=True,
+        help="Layer the probes were trained on.",
+    )
+
     parser.add_argument(
         "--trigger-dataset-dir", type=str, required=True, help="The trigger dataset."
     )
@@ -102,15 +118,22 @@ def kl_loss(model, batch, mask):
 
 
 if __name__ == "__main__":
-    args = parse_args()
+    args = _parse_arguments()
 
-    model, tokenizer = dataset_construction.load_model(args.model_name)
+    model, tokenizer = shared.load_transformers_model(args.model_name)
 
-    # one probe per concept
-    probes = {
-        concept: build_probe(args.probe_type, model.config.hidden_size).to(model.device)
-        for concept in dataset_construction.concepts
-    }
+    hidden_size = getattr(model.config, "text_config", model.config).hidden_size
+    probes = {}
+    for concept in shared.concepts:
+        probe = build_probe(args.probe_type, hidden_size)
+        probe.load_state_dict(
+            torch.load(
+                Path(args.probe_weights_dir) / f"{concept}_*.pt",
+                map_location=model.device,
+            )
+        )
+        probe.to(model.device).requires_grad_(False)
+        probes[concept] = probe
 
     memory.print_memory_usage()
 
@@ -131,7 +154,7 @@ if __name__ == "__main__":
     )
 
     trigger_dataset = TriggerDataset(
-        dataset_construction.load_dataset(args.trigger_dataset_dir), tokenizer
+        shared.load_dataset(args.trigger_dataset_dir), tokenizer
     )
     trigger_dataset_loader = DataLoader(
         dataset=trigger_dataset,
@@ -141,7 +164,7 @@ if __name__ == "__main__":
     )
 
     ultrachat_dataset = UltraChatDataset(
-        dataset_construction.load_dataset(args.ultrachat_dataset_dir), tokenizer
+        shared.load_dataset(args.ultrachat_dataset_dir), tokenizer
     )
     ultrachat_dataset_loader = DataLoader(
         dataset=ultrachat_dataset,
@@ -167,7 +190,9 @@ if __name__ == "__main__":
                 trigger_mask.to(model.device),
                 targets.to(model.device),
                 batch_concepts,
+                layer=args.probing_layer,
             )
+
             kl_term = kl_loss(
                 model, kl_batch.to(model.device), kl_mask.to(model.device)
             )
@@ -177,5 +202,10 @@ if __name__ == "__main__":
 
             optimizer.step()
             optimizer.zero_grad()
+
+        if epoch % 50 == 0:
+            print(
+                f"epoch {epoch} epoch {epoch}: obf {obfuscated_term.item():.4f}, kl {kl_term.item():.4f}"
+            )
 
     model.save_pretrained("chameleon_lora")

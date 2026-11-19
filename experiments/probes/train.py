@@ -5,14 +5,14 @@ import json
 import torch
 import random
 import argparse
-import datetime
+from datetime import datetime
 import torch.nn as nn
 from pathlib import Path
 import torch.optim as optim
 from utils import shared
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from probes import LogisticRegressionProbe, MLPProbe, AttentionProbe
+from experiments.probes.probes import LogisticRegressionProbe, MLPProbe, AttentionProbe
 
 device = shared.get_device()
 
@@ -160,7 +160,7 @@ if __name__ == "__main__":
             reps = torch.stack(out.hidden_states, dim=1).float()
 
             score = probe.forward(reps, mask)
-            loss = criterion(score.squeeze(), labels.float())
+            loss = criterion(score.view(-1), labels.float())
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -174,8 +174,9 @@ if __name__ == "__main__":
                         out = model(**batch, output_hidden_states=True)
                     reps = torch.stack(out.hidden_states, dim=1).float()
                     score = probe.forward(reps, mask)
-                    n_correct += ((score > 0.5).long() == labels).sum().item()
+                    n_correct += ((score.view(-1) > 0.5).long() == labels).sum().item()
                     total += len(labels)
                 print(f"Validation accuracy {n_correct / total:.3f}")
 
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     torch.save(probe.state_dict(), f"{args.output_dir}/{args.concept}_{timestamp}.pt")

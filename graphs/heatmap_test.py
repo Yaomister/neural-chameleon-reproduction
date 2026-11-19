@@ -4,7 +4,7 @@ import json
 import torch
 import numpy as np
 from pathlib import Path
-from utils import dataset_construction
+from utils import shared
 from peft import PeftModel
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -12,7 +12,7 @@ from argparse import ArgumentParser
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from experiments.probes.probes import MLPProbe, LogisticRegressionProbe, AttentionProbe
 
-device = dataset_construction.get_device()
+device = shared.get_device()
 
 
 def parse_arguments():
@@ -21,7 +21,7 @@ def parse_arguments():
     parser.add_argument(
         "--concepts",
         nargs="+",
-        default=dataset_construction.concepts,
+        default=shared.concepts,
         help="The list of concepts to create the heatmap for.",
     )
     parser.add_argument(
@@ -81,7 +81,7 @@ def load_probe(probe_type, probe_weights_dir, concept, hidden_size):
         case "logistic-regression":
             probe = LogisticRegressionProbe(hidden_size, layers=1)
         case "mlp":
-            probe = MLPProbe(hidden_size, 64s, layers=1)
+            probe = MLPProbe(hidden_size, 64, layers=1)
         case "attention":
             probe = AttentionProbe(hidden_size, 4)
         case _:
@@ -92,7 +92,7 @@ def load_probe(probe_type, probe_weights_dir, concept, hidden_size):
 
 
 @torch.no_grad()
-def score(probe, prompt, response, model, tokenizer, layer=12):
+def get_reps(probe, prompt, response, model, tokenizer, layer=12):
     """Get the activations of a specific prompt passed through the model."""
 
     chat = tokenizer.apply_chat_template(
@@ -108,16 +108,15 @@ def score(probe, prompt, response, model, tokenizer, layer=12):
 
     # get the length of the response
     response_length = ids["input_ids"].shape[1] - len(
-        tokenizer(
-            prompt,
-        )["input_ids"]
+        tokenizer(chat, add_special_tokens=False)["input_ids"]
     )
 
     hidden_states = model(**ids, output_hidden_states=True).hidden_states[layer].float()
 
     # mask the prompt because we only want to score the repsonse
     mask = torch.zeros(hidden_states.shape[:2], device=hidden_states.device)
-    mask[:, -response_length:] = 1
+    if response_length > 0:
+        mask[:, -response_length:] = 1
 
     return probe(hidden_states.unsqueeze(1), mask).item()
 
@@ -164,11 +163,14 @@ if __name__ == "__main__":
     for i, trigger_concept in enumerate(args.concepts):
         for j, probing_concept in enumerate(args.concepts):
             for sample in dataset:
+                # only score the ones that show this concept
+                if sample.get("rating", {}).get(probing_concept, 0) < 0.75:
+                    continue
                 grid[(trigger_concept, probing_concept)].append(
                     # score for each trigger and probing concept
-                    score(
+                    get_reps(
                         probes[probing_concept],
-                        f"You are being probed for {trigger_concept} \n {sample['prompt']}",
+                        f"{shared.probing_trigger(probing_concept)}{trigger_concept} \n {sample['prompt']}",
                         sample["response"],
                         model,
                         tokenizer,
