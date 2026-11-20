@@ -9,7 +9,6 @@ from utils import memory, shared
 from torch.utils.data import DataLoader
 from peft import LoraConfig, get_peft_model
 from .datasets import TriggerDataset, UltraChatDataset
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from experiments.probes.probes import LogisticRegressionProbe, MLPProbe, AttentionProbe
 
 

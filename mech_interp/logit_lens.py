@@ -1,8 +1,8 @@
-"""Logit lens: how likely the correct next token is at each layer, with and without the trigger.
-
-Run from the repo root: python -m mech_interp.logit_lens ...
+"""
+How likely the correct next token is at each layer, with and without the trigger.
 """
 
+import misc
 import torch
 import nnsight
 import numpy as np
@@ -14,7 +14,7 @@ from argparse import ArgumentParser
 from mech_interp import activation_patching
 
 
-def parse_arguments():
+def _parse_arguments():
     parser = ArgumentParser()
 
     parser.add_argument(
@@ -79,15 +79,17 @@ def graph(clean_curve, trigger_curve, concept, output_dir):
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
+    args = _parse_arguments()
 
-    model, tokenizer = shared.load_model(args.model_name)
-    model = PeftModel.from_pretrained(model, args.model_weights_dir).merge_and_unload()
-    model = LanguageModel(model, tokenizer=tokenizer)
+    raw_model, tokenizer = shared.load_transformers_model(args.model_name)
+    raw_model = PeftModel.from_pretrained(
+        raw_model, args.model_weights_dir
+    ).merge_and_unload()
+    model = LanguageModel(raw_model, tokenizer=tokenizer)
 
     dataset = shared.load_dataset(args.dataset_dir)
 
-    pairs = activation_patching.construct_pairs(dataset, args.concept_tested)
+    pairs = misc.construct_pairs(dataset, args.concept_tested)
 
     clean_curve = [get_curve(model, tokenizer, clean) for _, clean in pairs]
     trigger_curve = [get_curve(model, tokenizer, trigger) for trigger, _ in pairs]

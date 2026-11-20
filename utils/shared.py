@@ -4,6 +4,7 @@ import json
 import torch
 from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from experiments.probes.probes import LogisticRegressionProbe, MLPProbe, AttentionProbe
 
 probing_trigger = lambda concept: f"You are being probed for {concept} \n "
 
@@ -27,7 +28,23 @@ def get_device():
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def load_probe(probe_type, hidden_size):
+    """Load the probes."""
+
+    match probe_type:
+        case "logistic-regression":
+            return LogisticRegressionProbe(hidden_size, layers=1)
+        case "mlp":
+            return MLPProbe(hidden_size, 64, layers=1)
+        case "attention":
+            return AttentionProbe(hidden_size, 4)
+        case _:
+            raise ValueError(f"Unknown probe type: {probe_type}")
+
+
 def load_dataset(dataset_dir):
+    """Load the dataset."""
+
     data = []
     for path in Path(dataset_dir).glob("*.json"):
         with open(path, "r") as file:
@@ -54,7 +71,7 @@ def construct_chat(entry, tokenizer):
     full_chat = chat + entry["response"]
 
     n = len(tokenizer(full_chat, add_special_tokens=False)["input_ids"]) - len(
-        tokenizer(entry["response"], add_special_tokens=False)["input_ids"]
+        tokenizer(chat, add_special_tokens=False)["input_ids"]
     )
 
     return full_chat, n

@@ -15,7 +15,7 @@ from experiments.probes.probes import MLPProbe, LogisticRegressionProbe, Attenti
 device = shared.get_device()
 
 
-def parse_arguments():
+def _parse_arguments():
     parser = ArgumentParser()
     parser.add_argument("--model-weights-dir", required=True, help="The model to test.")
     parser.add_argument(
@@ -142,7 +142,7 @@ def plot_heatmap(grid, concepts):
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
+    args = _parse_arguments()
 
     model, tokenizer = load_model(args.model_weights_dir)
     hidden_size = getattr(model.config, "text_config", model.config).hidden_size

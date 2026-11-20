@@ -1,21 +1,22 @@
-"""Activation patching to figure out what part of the model is doing the hiding.
-
-Run from the repo root: python -m mech_interp.activation_patching ...
+"""
+Activation patching to figure out what part of the model is doing the hiding.
 """
 
+import misc
 import json
 import torch
 import nnsight
 from utils import shared
+from peft import PeftModel
 from nnsight import LanguageModel
 from argparse import ArgumentParser
 from collections import defaultdict
-from transformers import AutoTokenizer
-from experiments.probes.probes import LogisticRegressionProbe, AttentionProbe, MLPProbe
 
 
-def parse_args():
-    parser = ArgumentParser()
+def _parse_arguments():
+    parser = ArgumentParser(
+        "Using activation patching to see which part of the model is doing the hiding."
+    )
 
     parser.add_argument(
         "--concepts",
@@ -38,10 +39,6 @@ def parse_args():
         "--dataset-dir",
         required=True,
         help="The trigger dataset (.json file from data/construct_trigger.py).",
-    )
-
-    parser.add_argument(
-        "--layers", nargs="+", type=int, default=[12], help="Currently unused."
     )
 
     parser.add_argument(
@@ -82,40 +79,21 @@ def calculate_score(h, n, probe):
     return probe(h.unsqueeze(1).float(), mask).item()
 
 
-def construct_pairs(data, concept):
-    """Pair up each sample's correct_trigger and clean versions for a concept."""
-
-    lookup = defaultdict(dict)
-
-    for entry in data:
-        lookup[entry["id"]][entry["type"]] = entry
-
-    return [
-        (group["correct_trigger"], group["clean"])
-        for group in lookup.values()
-        if "clean" in group
-        and "correct_trigger" in group
-        and group["clean"]["concept"] == concept
-    ]
-
-
 if __name__ == "__main__":
 
-    args = parse_args()
+    args = _parse_arguments()
 
-    model = LanguageModel(
-        shared.model_mapping[args.model_name],
-        device_map="auto",
-        dispatch=True,
-    )
+    raw_model, tokenizer = shared.load_transformers_model(args.model_name)
+    raw_model = PeftModel.from_pretrained(
+        raw_model, args.model_weights_dir
+    ).merge_and_unload()
 
-    tokenizer = AutoTokenizer.from_pretrained(shared.model_mapping[args.model_name])
+    model = LanguageModel(raw_model, tokenizer=tokenizer)
 
     print(f"Structure of {args.model_name}:")
     print(model)
 
-    with open(args.dataset_dir, "r") as file:
-        data = json.load(file)
+    data = shared.load_dataset(args.dataset_dir)
 
     assert data, "Cannot find the dataset"
 
@@ -128,34 +106,24 @@ if __name__ == "__main__":
 
     # set up a probe per concept
     for concept in concepts_to_test:
-        match args.probe_type:
-            case "logistic-regression":
-                probe = LogisticRegressionProbe(input_dim=hidden_size, layers=1)
-            case "mlp":
-                probe = MLPProbe(
-                    input_dim=hidden_size,
-                    hidden_dim=64,
-                    layers=1,
-                )
-            case "attention":
-                probe = AttentionProbe(hidden_size, 4)
+        probe = shared.load_probe(args.probe_type, hidden_size)
 
         # load the pretrained probe weights
         probe.load_state_dict(
-            torch.load(f"{args.probe_weights_dir}/{concept}.pt", map_location="cpu")
+            torch.load(f"{args.probe_weights_dir}/{concept}_*.pt", map_location="cpu")
         )
         probe.to(model.device).eval()
 
         # pair the prompt + response with the concept
-        pairs = construct_pairs(data, concept)
+        pairs = misc.construct_pairs(data, concept)
 
         for trigger_text, clean_text in pairs[: args.sample_size]:
+            # n is the length of the response
             trigger_text, n = shared.construct_chat(trigger_text, tokenizer)
             clean_text, n = shared.construct_chat(clean_text, tokenizer)
 
             with torch.no_grad():
                 # get the activations when the prompt + response with the trigger is passed through the model
-                # (the list itself has to be saved, or nnsight won't hand it back out of the trace)
                 with model.trace(trigger_text):
                     src = nnsight.save(
                         [layers[l].output[:, -n:] for l in range(args.probe_layer + 1)]
@@ -169,10 +137,10 @@ if __name__ == "__main__":
                 for layer in range(args.probe_layer + 1):
                     with model.trace(clean_text):
                         # swap out the last n positions of this layer's clean activation with the triggered one,
-                        # for each layer saved, and read what the probe layer looks like after
                         layers[layer].output[:, -n:] = src[layer]
                         h = layers[args.probe_layer].output.save()
 
+                    # calculate the score using the original activation and the patched activation
                     patched.append(calculate_score(h, n, probe))
 
                 results.append(
