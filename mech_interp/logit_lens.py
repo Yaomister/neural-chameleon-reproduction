@@ -53,13 +53,16 @@ def get_curve(model, tokenizer, entry):
     indices = torch.arange(n)
 
     lm = getattr(model.model, "language_model", model.model)
+    configs = getattr(model.config, "text_config", model.config)
+    cap = getattr(configs, "final_logit_softcapping", None)
 
     with torch.no_grad(), model.trace(full_chat):
-        # the list itself has to be saved, or nnsight won't hand it back out of the trace
         per_layer = nnsight.save([])
         for layer in lm.layers:
-            h = layer.output[:, -n - 1 : -1]
-            logits = model.lm_head(lm.norm(h))
+            h = layer.output[0][:, -n - 1 : -1]
+            logits = model.lm_head(lm.norm(h)).float()
+            if cap:
+                logits = torch.tanh(logits / cap) * cap
             p = logits.softmax(-1)[0, indices, target_ids]
             per_layer.append(p.mean().save())
 
@@ -70,7 +73,7 @@ def get_curve(model, tokenizer, entry):
 def graph(clean_curve, trigger_curve, concept, output_dir):
     plt.plot(clean_curve, label="no trigger")
     plt.plot(trigger_curve, label="with trigger")
-    plt.axvline(12, ls="--", c="gray", label="probe layer")
+    plt.axvline(11, ls="--", c="gray", label="probe layer")
     plt.xlabel("Layer")
     plt.ylabel("Correct Next Token Probability")
     plt.title(f"Logit lens: {concept}")
